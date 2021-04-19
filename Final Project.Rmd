@@ -1,0 +1,322 @@
+---
+title: "Final Project"
+output:
+  word_document: default
+  html_document: default
+---
+Import EDA packages
+```{r}
+library(stats)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+library(randomForest)
+library(caret)
+library(e1071)
+library(ROSE)
+library(nnet)
+library(NeuralNetTools)
+library(psych)
+library(rpart)
+library(rpart.plot)
+library(arules)
+```
+
+Import dataframe as strokeData
+```{r}
+filePath <- "/Users/linanguyen/Desktop/healthcare-dataset-stroke-data.csv"
+strokeData <- read.csv(file = filePath)
+```
+
+Statistic summary of strokeData
+```{r}
+summary(strokeData)
+```
+
+Remove 'id' column from strokeData
+```{r}
+strokeData$id <- NULL
+```
+
+Counting number of occurences
+```{r}
+lapply(strokeData, table)
+```
+
+Convert BMI from character to numeric, and check for missing values.
+```{r}
+strokeData$bmi <- as.numeric(strokeData$bmi)
+colSums(is.na(strokeData))
+```
+
+Drop na in bmi because bmi varies with height and weight, so the average would not best represent the data set. Height and weight are also unknown so bmi cannot be calculated. 201 observations will be deleted, and should not affect the dataset when removing the rows with NA values for bmi.
+```{r}
+strokeData <- na.omit(strokeData)
+```
+
+Check if na values have been removed
+```{r}
+colSums(is.na(strokeData))
+```
+
+View the summary statistics.
+```{r}
+describe(strokeData)
+```
+
+Plotting the categorical data plots. 
+```{r}
+#gender bar plot
+genderPlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = gender))
+genderPlot
+#hypertension bar plot
+hypertensionPlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = hypertension))
+hypertensionPlot
+#heart_disease bar plot
+heart_diseasePlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = heart_disease))
+heart_diseasePlot
+#ever_married bar plot
+ever_marriedPlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = ever_married))
+ever_marriedPlot
+#work_type bar plot
+work_typePlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = work_type))
+work_typePlot
+#Residence_type bar plot
+Residence_typePlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = Residence_type))
+Residence_typePlot
+#smoking_status bar plot
+smoking_statusPlot <- ggplot(data = strokeData) + geom_bar(mapping = aes(x = smoking_status))
+smoking_statusPlot
+#CONTINUOUS DATA PLOTS
+#age, avg_glucose_level, bmi
+#age plot
+agePlot <- ggplot(data = strokeData) + geom_histogram(mapping = aes(x = age), binwidth = 1)
+agePlot
+#avg_glucose_level plot
+avg_glucose_levelPlot <- ggplot(data = strokeData) + geom_histogram(mapping = aes(x = avg_glucose_level), binwidth = 5)
+avg_glucose_levelPlot
+#bmi plot
+bmiPlot <- ggplot(data = strokeData) + geom_histogram(mapping = aes(x = bmi), binwidth = 1)
+bmiPlot
+```
+
+Pairwise comparisons
+```{r}
+strokeDataNumeric <- data.frame(strokeData$bmi, strokeData$avg_glucose_level, strokeData$bmi)
+pairs(strokeDataNumeric)
+```
+
+heatmap strokeData
+```{r}
+y <- data.matrix(strokeData)
+heatmap(y, main = 'Stroke Heatmap', cexRow = 0.5)
+```
+
+boxplots of age, avgGlucLevel, and bmi
+```{r}
+boxplot(strokeData$age, xlab = 'Age')
+boxplot(strokeData$avg_glucose_level, xlab = 'Average Glucose Level')
+boxplot(strokeData$bmi, xlab = 'BMI')
+
+```
+
+Standardizing the numeric fields (age, avg_glucose_level, bmi)
+```{r}
+strokeData$age_z <- scale(x = strokeData$age)
+strokeData$avg_glucose_level_z <- scale(x = strokeData$avg_glucose_level)
+strokeData$bmi_z <- scale(x = strokeData$bmi)
+
+#Identifying outliers from numeric data
+```{r}
+ageOutliers <- strokeData[ which(strokeData$age_z < -3 | strokeData$age_z > 3), ]
+glucoseOutliers <- strokeData[ which(strokeData$avg_glucose_level_z < -3 | strokeData$avg_glucose_level_z > 3), ]
+bmiOutliers <- strokeData[ which(strokeData$bmi_z < -3 | strokeData$bmi_z > 3), ]
+```
+
+
+Preparing the Data to Build Models
+Partition the data into a training set and testing set
+```{r}
+set.seed(8)
+n <- dim(strokeData)[1]
+train_ind <- runif(n) < 0.75
+strokeData_train <- strokeData[ train_ind, ]
+strokeData_test <- strokeData[ !train_ind, ]
+```
+
+Balancing the training data. 
+Class imbalance problem for stroke. We would rather misclassify a stroke that won't occur over a stroke that will occur for a stroke that won't. We will need to balance the data so that we can more accurately predict the outcome.
+```{r}
+table(strokeData_train$stroke)
+#increase yes's to 25% (from 4%) (resampling 1009 records)
+```{r}
+to.resample <- which(strokeData_train$stroke == 1)
+our.resample <- sample(x = to.resample, size = 1009, replace = TRUE)
+our.resample <- strokeData_train[our.resample, ]
+strokeData_train_rebal <- rbind(strokeData_train, our.resample)
+table(strokeData_train_rebal$stroke)
+```
+
+Logistic Regression for PCA
+```{r}
+#Create a data frame to store logistic regression data
+strokeData_logReg <- strokeData_train_rebal
+#Run the logistic regression algorithm
+logReg01 <- glm(formula = stroke ~ gender + age + hypertension + heart_disease + ever_married + work_type + Residence_type + avg_glucose_level + bmi + smoking_status, data = strokeData_logReg, family = binomial)
+summary(logReg01)
+```
+
+Validate the Logisitic regression model
+```{r}
+strokeData_logRegTest <- strokeData_test
+#Run the logistic regression algorithm
+logReg01test <- glm(formula = stroke ~ gender + age + hypertension + heart_disease + ever_married + work_type + Residence_type + avg_glucose_level + bmi + smoking_status, data = strokeData_logRegTest, family = binomial)
+summary(logReg01test)
+```
+
+Per the results of logistic regression, the following fields will not be used in models: gender, ever_married, work_type, residence_type
+
+
+Decision Trees
+```{r}
+###Create a dataframe to store decision tree data.
+strokeData_dt <- strokeData_train_rebal
+#change categorical variables to factors (gender, hypertension, heart_disease, ever_married, work_type, residence_type, smoking_status, )
+strokeData_dt$hypertension <- factor(strokeData_dt$hypertension)
+strokeData_dt$heart_disease <- factor(strokeData_dt$heart_disease)
+strokeData_dt$smoking_status <- factor(strokeData_dt$smoking_status)
+#decision tree algorithm
+dt01 <- rpart(formula = stroke ~ age + hypertension + heart_disease + avg_glucose_level + bmi + smoking_status, data = strokeData_dt, method = "class")
+rpart.plot(dt01, type = 4, extra = 2)
+#obtain the predicted values
+predStrokeDT <- data.frame(age = strokeData_dt$age, hypertension = strokeData_dt$hypertension, heart_disease = strokeData_dt$heart_disease, avg_glucose_level = strokeData_dt$avg_glucose_level, bmi = strokeData_dt$bmi, smoking_status = strokeData_dt$smoking_status)
+predDt01 <- predict(object = dt01, newdata = predStrokeDT, type = "class")
+#Evaluate the training model
+trainTableDT <- table(strokeData_dt$stroke, predDt01)
+row.names(trainTableDT) <- c("Actual: 0", "Actual: 1")
+colnames(trainTableDT) <- c("Predicted: 0", "Predicted: 1")
+trainTableDT <- addmargins(A = trainTableDT, FUN = list(Total = sum), quiet = TRUE); trainTableDT
+```
+
+Decision Tree Training Evaluation Metrics
+Accuracy = 85.289%
+Error rate = 14.712%
+Sensitvity = 65.695%
+Specificity = 91.822%
+Precision = 72.814%
+
+Validate the model on the test data
+```{r}
+strokeData_dtTest <- strokeData_test
+#change categorical variables to factors (gender, hypertension, heart_disease, ever_married, work_type, residence_type, smoking_status, )
+strokeData_dtTest$hypertension <- factor(strokeData_dtTest$hypertension)
+strokeData_dtTest$heart_disease <- factor(strokeData_dtTest$heart_disease)
+strokeData_dtTest$smoking_status <- factor(strokeData_dtTest$smoking_status)
+#subset the predictors
+predStrokeDTtest <- data.frame(age = strokeData_dtTest$age, hypertension = strokeData_dtTest$hypertension, heart_disease = strokeData_dtTest$heart_disease, avg_glucose_level = strokeData_dtTest$avg_glucose_level, bmi = strokeData_dtTest$bmi, smoking_status = strokeData_dtTest$smoking_status)
+#Run the decision tree model on the test data
+predDt01test <- predict(object = dt01, newdata = predStrokeDTtest, type = "class")
+#Evaluate the training model on TEST data
+testTableDT <- table(strokeData_dtTest$stroke, predDt01test)
+row.names(testTableDT) <- c("Actual: 0", "Actual: 1")
+colnames(testTableDT) <- c("Predicted: 0", "Predicted: 1")
+testTableDT <- addmargins(A = testTableDT, FUN = list(Total = sum), quiet = TRUE); testTableDT
+```
+
+Decision Tree Training Evaluation Metrics Test Data
+Accuracy = 87.649%
+Error rate = 12.351%
+Sensitvity = 30.769%
+Specificity = 90.108%
+Precision = 11.852%
+
+Neural Networks
+```{r}
+#create a dataframe to store neural network data
+strokeData_nn <- strokeData_train_rebal
+#Convert binary and categorical variables to factors (gender, hypertension, heart_disease, ever_married, work_type, Residence_type, smoking_status, stroke)
+strokeData_nn$hypertension <- factor(strokeData_nn$hypertension)
+strokeData_nn$heart_disease <- factor(strokeData_nn$heart_disease)
+strokeData_nn$smoking_status <- factor(strokeData_nn$smoking_status)
+strokeData_nn$stroke <- factor(strokeData_nn$stroke)
+#Perform min-max standardization on numeric variables (age, avg_glucose_level, bmi)
+strokeData_nn$age.mm <- (strokeData_nn$age - min(strokeData$age)) / (max(strokeData_nn$age) - min(strokeData_nn$age))
+strokeData_nn$avg_glucose_level.mm <- (strokeData_nn$avg_glucose_level - min(strokeData_nn$avg_glucose_level)) / (max(strokeData_nn$avg_glucose_level) - min(strokeData_nn$avg_glucose_level))
+strokeData_nn$bmi.mm <- (strokeData_nn$bmi - min(strokeData$bmi)) / (max(strokeData_nn$bmi) - min(strokeData_nn$bmi))
+#Run the neural network algorithm
+nn01 <- nnet(stroke ~ age.mm + hypertension + heart_disease + avg_glucose_level.mm + bmi.mm + smoking_status, data = strokeData_nn, size = 1)
+plotnet(nn01)
+nn01$wts
+#obtain the predicted values
+predStrokeNN <- data.frame(age.mm = strokeData_nn$age.mm, hypertension = strokeData_nn$hypertension, heart_disease = strokeData_nn$heart_disease, avg_glucose_level.mm = strokeData_nn$avg_glucose_level.mm, bmi.mm = strokeData_nn$bmi.mm, smoking_status = strokeData_nn$smoking_status)
+predNn01 <- predict(object = nn01, newdata = predStrokeNN, type = "class")
+#Evaluate the training model
+trainTableNN <- table(strokeData_nn$stroke, predNn01)
+row.names(trainTableNN) <- c("Actual: 0", "Actual: 1")
+colnames(trainTableNN) <- c("Predicted: 0", "Predicted: 1")
+trainTableNN <- addmargins(A = trainTableNN, FUN = list(Total = sum), quiet = TRUE); trainTableNN
+```
+
+Neural Network Training Evaluation Metrics
+Accuracy = 79.863%
+Error rate = 20.137%
+Sensitvity = 53.516%
+Specificity = 88.647%
+Precision = 61.117%
+
+Validate the model on test data
+```{r}
+#Test the model on the test data
+strokeData_nnTest <- strokeData_test
+#Convert binary and categorical variables to factors (gender, hypertension, heart_disease, ever_married, work_type, Residence_type, smoking_status, stroke)
+strokeData_nnTest$hypertension <- factor(strokeData_nnTest$hypertension)
+strokeData_nnTest$heart_disease <- factor(strokeData_nnTest$heart_disease)
+strokeData_nnTest$smoking_status <- factor(strokeData_nnTest$smoking_status)
+strokeData_nnTest$stroke <- factor(strokeData_nnTest$stroke)
+#Perform min-max standardization on numeric variables (age, avg_glucose_level, bmi)
+strokeData_nnTest$age.mm <- (strokeData_nnTest$age - min(strokeData_nnTest$age)) / (max(strokeData_nnTest$age) - min(strokeData_nnTest$age))
+strokeData_nnTest$avg_glucose_level.mm <- (strokeData_nnTest$avg_glucose_level - min(strokeData_nnTest$avg_glucose_level)) / (max(strokeData_nnTest$avg_glucose_level) - min(strokeData_nnTest$avg_glucose_level))
+strokeData_nnTest$bmi.mm <- (strokeData_nnTest$bmi - min(strokeData_nnTest$bmi)) / (max(strokeData_nnTest$bmi) - min(strokeData_nnTest$bmi))
+#obtain the predicted values
+predStrokeNNtest <- data.frame(age.mm = strokeData_nnTest$age.mm, hypertension = strokeData_nnTest$hypertension, heart_disease = strokeData_nnTest$heart_disease, avg_glucose_level.mm = strokeData_nnTest$avg_glucose_level.mm, bmi.mm = strokeData_nnTest$bmi.mm, smoking_status = strokeData_nnTest$smoking_status)
+predNn01test <- predict(object = nn01, newdata = predStrokeNNtest, type = "class")
+#Evaluate the training model
+testTableNN <- table(strokeData_nnTest$stroke, predNn01test)
+row.names(testTableNN) <- c("Actual: 0", "Actual: 1")
+colnames(testTableNN) <- c("Predicted: 0", "Predicted: 1")
+testTableNN <- addmargins(A = testTableNN, FUN = list(Total = sum), quiet = TRUE); testTableNN
+```
+
+Neural Network Training Evaluation Metrics Test Data
+Accuracy = 87.091%
+Error rate = 12.908%
+Sensitvity = 44.231%
+Specificity = 88.944%
+Precision = 14.745%
+
+Association Rules
+```{r}
+#create a dataframe to store association rules data
+strokeData_ar <- strokeData_train_rebal
+#subset the data to only use variables we want rules for
+min.strokeData_ar <- subset(strokeData_ar, select = c("age", "hypertension", "heart_disease", "avg_glucose_level", "bmi", "smoking_status", "stroke"))
+#Convert binary and categorical variables to factors (hypertension, heart_disease, smoking_status, stroke)
+min.strokeData_ar$hypertension <- factor(min.strokeData_ar$hypertension)
+min.strokeData_ar$heart_disease <- factor(min.strokeData_ar$heart_disease)
+min.strokeData_ar$smoking_status <- factor(min.strokeData_ar$smoking_status)
+min.strokeData_ar$stroke <- factor(min.strokeData_ar$stroke)
+#generate the association rules
+all.rules <- apriori(data = min.strokeData_ar, parameter = list(supp = 0.01, target = "rules", conf = 0.4, minlen = 2, maxlen = 2))
+#view the rules
+inspect(head(all.rules, by = "lift", n = 10))
+#determine the rules where stroke in antecedent
+all.rules.ant.df <- as(as(attr(all.rules, "lhs"), "transactions"), "data.frame")
+t1 <- all.rules.ant.df$items == "{stroke=1}"
+t2 <- all.rules.ant.df$items == "{stroke=0}"
+non.stroke.ant <- abs(t1 + t2 - 1)
+good.rules <- all.rules[non.stroke.ant == 1]
+inspect(head(good.rules, by = "lift", n = 25))
+```
+
+
